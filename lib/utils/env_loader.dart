@@ -1,21 +1,11 @@
 import 'dart:convert';
 
-// Conditional import: uses env_loader_io.dart on native platforms, env_loader_web.dart on web
-import 'env_loader_io.dart' if (dart.library.html) 'env_loader_web.dart';
-
-/// Environment configuration loader
+/// Environment configuration loader using --dart-define-from-file
 ///
-/// Supports two modes:
-/// 1. Runtime environment variables (Appwrite, native apps): Uses Platform.environment
-/// 2. Compile-time defines (local dev, web): Uses --dart-define-from-file
-///
-/// Usage for local development:
+/// Usage:
 /// ```bash
 /// flutter run --dart-define-from-file=env.json
 /// ```
-///
-/// Usage for Appwrite deployment:
-/// Set environment variables in Appwrite dashboard
 ///
 /// Note: JSON objects in env.json should be encoded as strings:
 /// ```json
@@ -29,15 +19,7 @@ class EnvLoader {
   static final Map<String, dynamic> _cache = {};
 
   /// Get a simple string value
-  /// First tries Platform.environment (runtime), then falls back to String.fromEnvironment (compile-time)
   static String getString(String key, {String defaultValue = ''}) {
-    // Try runtime environment first (for Appwrite and server environments)
-    final runtimeValue = PlatformEnv.getEnv(key);
-    if (runtimeValue != null && runtimeValue.isNotEmpty) {
-      return runtimeValue;
-    }
-
-    // Fall back to compile-time environment (for local development)
     switch (key) {
       case 'gemini_api_key':
         return const String.fromEnvironment('gemini_api_key', defaultValue: '');
@@ -47,8 +29,9 @@ class EnvLoader {
   }
 
   /// Get and parse a JSON object/map from a JSON-encoded string
-  /// First tries Platform.environment (runtime), then falls back to String.fromEnvironment (compile-time)
-  static Map<String, dynamic> getJson(String key, {Map<String, dynamic>? defaultValue}) {
+  /// The value in env.json should be a JSON-encoded string
+  static Map<String, dynamic> getJson(String key,
+      {Map<String, dynamic>? defaultValue}) {
     // Check cache first
     if (_cache.containsKey(key)) {
       return _cache[key] as Map<String, dynamic>;
@@ -56,28 +39,25 @@ class EnvLoader {
 
     String jsonString = '';
 
-    // Try runtime environment first (for Appwrite and server environments)
-    final runtimeValue = PlatformEnv.getEnv(key);
-    if (runtimeValue != null && runtimeValue.isNotEmpty) {
-      jsonString = runtimeValue;
-    } else {
-      // Fall back to compile-time environment (for local development)
-      switch (key) {
-        case 'elasticsearch':
-          jsonString = const String.fromEnvironment('elasticsearch', defaultValue: '');
-          break;
-        case 'vertex_ai':
-          jsonString = const String.fromEnvironment('vertex_ai', defaultValue: '');
-          break;
-        case 'service_account':
-          jsonString = const String.fromEnvironment('service_account', defaultValue: '');
-          break;
-        case 'pubmed':
-          jsonString = const String.fromEnvironment('pubmed', defaultValue: '');
-          break;
-        default:
-          return defaultValue ?? {};
-      }
+    // Get the JSON-encoded string from environment
+    switch (key) {
+      case 'elasticsearch':
+        jsonString =
+            const String.fromEnvironment('elasticsearch', defaultValue: '');
+        break;
+      case 'vertex_ai':
+        jsonString =
+            const String.fromEnvironment('vertex_ai', defaultValue: '');
+        break;
+      case 'service_account':
+        jsonString =
+            const String.fromEnvironment('service_account', defaultValue: '');
+        break;
+      case 'pubmed':
+        jsonString = const String.fromEnvironment('pubmed', defaultValue: '');
+        break;
+      default:
+        return defaultValue ?? {};
     }
 
     if (jsonString.isEmpty) {
@@ -97,13 +77,15 @@ class EnvLoader {
 
   /// Get a nested value from a JSON object
   /// Example: getNestedString('elasticsearch', 'endpoint')
-  static String getNestedString(String parentKey, String childKey, {String defaultValue = ''}) {
+  static String getNestedString(String parentKey, String childKey,
+      {String defaultValue = ''}) {
     final parent = getJson(parentKey);
     return parent[childKey]?.toString() ?? defaultValue;
   }
 
   /// Get nested integer
-  static int getNestedInt(String parentKey, String childKey, {int defaultValue = 0}) {
+  static int getNestedInt(String parentKey, String childKey,
+      {int defaultValue = 0}) {
     final parent = getJson(parentKey);
     final value = parent[childKey];
     if (value is int) return value;
@@ -112,7 +94,8 @@ class EnvLoader {
   }
 
   /// Get nested boolean
-  static bool getNestedBool(String parentKey, String childKey, {bool defaultValue = false}) {
+  static bool getNestedBool(String parentKey, String childKey,
+      {bool defaultValue = false}) {
     final parent = getJson(parentKey);
     final value = parent[childKey];
     if (value is bool) return value;

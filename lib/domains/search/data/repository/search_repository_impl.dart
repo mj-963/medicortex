@@ -43,7 +43,7 @@ class SearchRepositoryImpl implements SearchRepository {
     List<double>? queryEmbedding;
     if (_embeddingsService != null) {
       try {
-        queryEmbedding = await _embeddingsService.generateQueryEmbedding(
+        queryEmbedding = await _embeddingsService?.generateQueryEmbedding(
           query.query,
         );
         debugPrint('✅ Using hybrid search (vector + keyword)');
