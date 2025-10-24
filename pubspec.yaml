@@ -30,6 +30,7 @@ dependencies:
   googleapis_auth: ^2.0.0
   pdf: ^3.11.3
   printing: ^5.14.2
+  appwrite: ^20.2.1
 
 dependency_overrides:
   # Removed analyzer override for Drift compatibility

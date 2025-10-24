@@ -1,0 +1,1 @@
+tar -czf ../medicortex-appwrite-final.tar.gz --exclude='.git' --exclude='.dart_tool' --exclude='build' --exclude='pubspec.lock' --exclude='scripts/venv' --exclude='*.tar.gz' --exclude='*.zip' --exclude='env.original.json' .

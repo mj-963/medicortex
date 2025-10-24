@@ -4,6 +4,7 @@ import '../domains/search/data/client/elasticsearch_client.dart';
 import '../domains/search/data/repository/search_repository_impl.dart';
 import '../domains/search/domain/repository/search_repository.dart';
 import '../utils/env_loader.dart';
+import '../core/functions/functions_client.dart';
 import 'vertex_ai_provider.dart';
 
 /// Elasticsearch configuration provider
@@ -21,10 +22,15 @@ final elasticsearchConfigProvider = Provider<Map<String, String>>((ref) {
 /// Elasticsearch client provider
 final elasticsearchClientProvider = Provider<ElasticsearchClient>((ref) {
   final config = ref.watch(elasticsearchConfigProvider);
+
+  // Use Appwrite Functions proxy for web to avoid CORS
+  final functionsClient = kIsWeb ? ref.watch(functionsClientProvider) : null;
+
   return ElasticsearchClient(
     endpoint: config['endpoint']!,
     apiKey: config['apiKey']!,
     indexName: config['index']!,
+    functionsClient: functionsClient,
   );
 });
 

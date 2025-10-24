@@ -2,17 +2,22 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../domain/entities/search_result.dart';
+import '../../../../core/functions/functions_client.dart';
 
 /// Elasticsearch client for hybrid search (keyword + semantic)
+///
+/// Uses Appwrite Functions proxy to avoid CORS issues in web deployment
 class ElasticsearchClient {
   final String endpoint;
   final String apiKey;
   final String indexName;
+  final FunctionsClient? functionsClient; // Optional: use for web/proxy mode
 
   ElasticsearchClient({
     required this.endpoint,
     required this.apiKey,
     this.indexName = 'pubmed_articles',
+    this.functionsClient, // Pass this to enable proxy mode
   });
 
   /// Perform hybrid search (keyword + semantic vector search)
@@ -264,6 +269,53 @@ class ElasticsearchClient {
     dynamic body, {
     bool isNdjson = false,
   }) async {
+    // Use Appwrite Functions proxy if available (for web/CORS issues)
+    if (functionsClient != null && path.contains('/_search')) {
+      try {
+        final requestBody = body is String ? jsonDecode(body) : body;
+
+        final result = await functionsClient!.execJson(
+          method: 'POST',
+          path: '/search',
+          data: requestBody as Map<String, dynamic>,
+        );
+
+        // Extract the data from SecureAPI response format
+        // SecureAPI wraps responses as: {status, message, data}
+        // FunctionsClient.execJson() already returns a decoded Map
+        final data = result['data'] ?? result;
+
+        // Validate we have Elasticsearch response structure
+        if (data is! Map<String, dynamic>) {
+          throw Exception('Invalid Elasticsearch response type');
+        }
+
+        if (!data.containsKey('hits')) {
+          throw Exception('Invalid Elasticsearch response structure');
+        }
+
+        // Since data is already a Map, encode it ONCE to a JSON string for http.Response.body
+        final responseBody = jsonEncode(data);
+
+        // Return the response - http.Response.body expects a String
+        return http.Response(
+          responseBody,
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      } catch (e) {
+        debugPrint('❌ Elasticsearch proxy error: $e');
+
+        // Return error response
+        return http.Response(
+          jsonEncode({'error': e.toString()}),
+          500,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }
+    }
+
+    // Fallback to direct HTTP (for non-web or when functionsClient not provided)
     final url = Uri.parse('$endpoint$path');
     return http.post(
       url,
@@ -408,6 +460,29 @@ class ElasticsearchClient {
   /// Get a document by its ID (PMID)
   Future<Map<String, dynamic>?> getDocumentById(String id) async {
     try {
+      // Use Appwrite Functions proxy if available (for web/CORS issues)
+      if (functionsClient != null) {
+        try {
+          final result = await functionsClient!.execJson(
+            method: 'GET',
+            path: '/doc/$id',
+          );
+
+          final data = result['data'] ?? result;
+
+          if (data is! Map<String, dynamic>) {
+            return null;
+          }
+
+          // Elasticsearch wraps the document in {_source: {...}}
+          return data['_source'] as Map<String, dynamic>?;
+        } catch (e) {
+          debugPrint('❌ Error fetching document via proxy: $e');
+          return null;
+        }
+      }
+
+      // Fallback to direct HTTP
       final response = await _get('/$indexName/_doc/$id');
 
       if (response.statusCode == 200) {

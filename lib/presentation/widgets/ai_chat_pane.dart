@@ -84,46 +84,45 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
     // Show confirmation dialog
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Delete Message'),
-            content: const Text(
-              'Are you sure you want to delete this message?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  final navigator = Navigator.of(context);
-                  final messenger = ScaffoldMessenger.of(context);
-
-                  // Delete from UI state
-                  ref.read(chatProvider.notifier).deleteMessage(timestamp);
-
-                  // Delete from database if there's an active session
-                  final sessionId = ref.read(currentSessionIdProvider);
-                  if (sessionId != null) {
-                    await ref
-                        .read(conversationIsarProvider.notifier)
-                        .deleteMessage(sessionId, timestamp);
-                    debugPrint('🗑️  Deleted message from session $sessionId');
-                  }
-
-                  navigator.pop();
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Message deleted'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-                child: const Text('Delete'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Message'),
+        content: const Text(
+          'Are you sure you want to delete this message?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
+          TextButton(
+            onPressed: () async {
+              final navigator = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
+
+              // Delete from UI state
+              ref.read(chatProvider.notifier).deleteMessage(timestamp);
+
+              // Delete from database if there's an active session
+              final sessionId = ref.read(currentSessionIdProvider);
+              if (sessionId != null) {
+                await ref
+                    .read(conversationIsarProvider.notifier)
+                    .deleteMessage(sessionId, timestamp);
+                debugPrint('🗑️  Deleted message from session $sessionId');
+              }
+
+              navigator.pop();
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Message deleted'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -146,8 +145,7 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
         // Paper exists in results - add to selection
         ref.read(selectedPapersProvider.notifier).togglePaper(pmid);
 
-        final isSelected =
-            ref
+        final isSelected = ref
                 .read(selectedPapersProvider)
                 .firstWhereOrNull((paper) => paper == pmid) !=
             null;
@@ -216,12 +214,10 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
           title: response['title']?.toString() ?? '',
           abstract: response['abstract']?.toString() ?? '',
           score: 1.0,
-          publicationDate:
-              response['publication_date'] != null
-                  ? DateTime.tryParse(response['publication_date'].toString())
-                  : null,
-          sourceUrl:
-              response['source_url']?.toString() ??
+          publicationDate: response['publication_date'] != null
+              ? DateTime.tryParse(response['publication_date'].toString())
+              : null,
+          sourceUrl: response['source_url']?.toString() ??
               'https://pubmed.ncbi.nlm.nih.gov/$pmid/',
           authors: (response['authors'] as List?)?.cast<String>() ?? [],
           metadata: response,
@@ -230,9 +226,7 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
         // Add to current results
         final workspaceState = ref.read(workspaceProvider);
         final updatedResults = [...workspaceState.searchResults, paper];
-        ref
-            .read(workspaceProvider.notifier)
-            .setSearchResults(
+        ref.read(workspaceProvider.notifier).setSearchResults(
               updatedResults,
               workspaceState.currentQuery ?? '',
             );
@@ -287,12 +281,11 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
       );
 
       // Filter messages to only selected ones
-      final selectedMessages =
-          allMessages
-              .where(
-                (msg) => _selectedMessageTimestamps.contains(msg.timestamp),
-              )
-              .toList();
+      final selectedMessages = allMessages
+          .where(
+            (msg) => _selectedMessageTimestamps.contains(msg.timestamp),
+          )
+          .toList();
 
       debugPrint('📄 Filtered to ${selectedMessages.length} messages');
 
@@ -371,238 +364,231 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color:
-                    _isSelectingMessages
-                        ? theme.colorScheme.primaryContainer
-                        : theme.cardColor,
+                color: _isSelectingMessages
+                    ? theme.colorScheme.primaryContainer
+                    : theme.cardColor,
                 border: Border(bottom: BorderSide(color: theme.dividerColor)),
               ),
-              child:
-                  _isSelectingMessages
-                      ? Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle_outline,
+              child: _isSelectingMessages
+                  ? Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_selectedMessageTimestamps.length} selected',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Select All button
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _selectedMessageTimestamps.clear();
+                              _selectedMessageTimestamps.addAll(
+                                messages.map((m) => m.timestamp),
+                              );
+                            });
+                          },
+                          icon: Icon(
+                            Icons.select_all,
                             size: 16,
                             color: theme.colorScheme.primary,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${_selectedMessageTimestamps.length} selected',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w600,
+                          label: Text(
+                            'Select All',
+                            style: TextStyle(
+                              color: theme.colorScheme.onErrorContainer,
                             ),
                           ),
-                          const Spacer(),
-                          // Select All button
-                          TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _selectedMessageTimestamps.clear();
-                                _selectedMessageTimestamps.addAll(
-                                  messages.map((m) => m.timestamp),
-                                );
-                              });
-                            },
-                            icon: Icon(
-                              Icons.select_all,
-                              size: 16,
-                              color: theme.colorScheme.primary,
-                            ),
-                            label: Text(
-                              'Select All',
-                              style: TextStyle(
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          // Cancel button
-                          TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _isSelectingMessages = false;
-                                _selectedMessageTimestamps.clear();
-                              });
-                            },
-                            icon: Icon(
-                              Icons.close,
-                              size: 16,
-                              color: theme.colorScheme.error,
-                            ),
-                            label: Text(
-                              'Cancel',
-                              style: TextStyle(
-                                color: theme.colorScheme.onErrorContainer,
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Cancel button
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _isSelectingMessages = false;
+                              _selectedMessageTimestamps.clear();
+                            });
+                          },
+                          icon: Icon(
+                            Icons.close,
+                            size: 16,
+                            color: theme.colorScheme.error,
+                          ),
+                          label: Text(
+                            'Cancel',
+                            style: TextStyle(
+                              color: theme.colorScheme.onErrorContainer,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          FilledButton.icon(
-                            onPressed:
-                                _selectedMessageTimestamps.isEmpty
-                                    ? null
-                                    : () => _exportSelectedMessages(messages),
-                            icon: const Icon(Icons.picture_as_pdf, size: 16),
-                            label: const Text('Export'),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              textStyle: const TextStyle(fontSize: 12),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
                             ),
                           ),
-                        ],
-                      )
-                      : Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed:
-                                isLoading
-                                    ? null
-                                    : () {
-                                      debugPrint(
-                                        '📋 Entering selection mode with ${messages.length} messages',
-                                      );
-                                      // Check for duplicates
-                                      final timestamps =
-                                          messages
-                                              .map((m) => m.timestamp)
-                                              .toList();
-                                      debugPrint(
-                                        '📋 All message timestamps: $timestamps',
-                                      );
-                                      final uniqueTimestamps =
-                                          timestamps.toSet();
-                                      debugPrint(
-                                        '📋 Unique timestamps: ${uniqueTimestamps.length}',
-                                      );
-                                      if (timestamps.length !=
-                                          uniqueTimestamps.length) {
-                                        debugPrint(
-                                          '⚠️ WARNING: Duplicate timestamps found!',
-                                        );
-                                      }
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: _selectedMessageTimestamps.isEmpty
+                              ? null
+                              : () => _exportSelectedMessages(messages),
+                          icon: const Icon(Icons.picture_as_pdf, size: 16),
+                          label: const Text('Export'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: isLoading
+                              ? null
+                              : () {
+                                  debugPrint(
+                                    '📋 Entering selection mode with ${messages.length} messages',
+                                  );
+                                  // Check for duplicates
+                                  final timestamps =
+                                      messages.map((m) => m.timestamp).toList();
+                                  debugPrint(
+                                    '📋 All message timestamps: $timestamps',
+                                  );
+                                  final uniqueTimestamps = timestamps.toSet();
+                                  debugPrint(
+                                    '📋 Unique timestamps: ${uniqueTimestamps.length}',
+                                  );
+                                  if (timestamps.length !=
+                                      uniqueTimestamps.length) {
+                                    debugPrint(
+                                      '⚠️ WARNING: Duplicate timestamps found!',
+                                    );
+                                  }
 
-                                      setState(() {
-                                        _isSelectingMessages = true;
-                                        // Pre-select only the last (most recent) message
-                                        _selectedMessageTimestamps.clear();
-                                        if (messages.isNotEmpty) {
-                                          final lastTimestamp =
-                                              messages.last.timestamp;
-                                          debugPrint(
-                                            '📋 Last message timestamp: $lastTimestamp',
-                                          );
-                                          _selectedMessageTimestamps.add(
-                                            lastTimestamp,
-                                          );
-                                        }
-                                        debugPrint(
-                                          '📋 Pre-selected ${_selectedMessageTimestamps.length} message (last one)',
-                                        );
-                                        debugPrint(
-                                          '📋 Timestamps: $_selectedMessageTimestamps',
-                                        );
-                                      });
-                                    },
-                            icon: const Icon(Icons.picture_as_pdf, size: 16),
-                            label: const Text('Export to PDF'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              textStyle: const TextStyle(fontSize: 12),
+                                  setState(() {
+                                    _isSelectingMessages = true;
+                                    // Pre-select only the last (most recent) message
+                                    _selectedMessageTimestamps.clear();
+                                    if (messages.isNotEmpty) {
+                                      final lastTimestamp =
+                                          messages.last.timestamp;
+                                      debugPrint(
+                                        '📋 Last message timestamp: $lastTimestamp',
+                                      );
+                                      _selectedMessageTimestamps.add(
+                                        lastTimestamp,
+                                      );
+                                    }
+                                    debugPrint(
+                                      '📋 Pre-selected ${_selectedMessageTimestamps.length} message (last one)',
+                                    );
+                                    debugPrint(
+                                      '📋 Timestamps: $_selectedMessageTimestamps',
+                                    );
+                                  });
+                                },
+                          icon: const Icon(Icons.picture_as_pdf, size: 16),
+                          label: const Text('Export to PDF'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
                             ),
+                            textStyle: const TextStyle(fontSize: 12),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
+                    ),
             ),
 
           // Chat messages
           Expanded(
-            child:
-                isRestoringConversation
-                    ? _buildRestoringState(currentSessionId)
-                    : messages.isEmpty
+            child: isRestoringConversation
+                ? _buildRestoringState(currentSessionId)
+                : messages.isEmpty
                     ? _buildEmptyState()
                     : ListView.builder(
-                      controller: _scrollController,
-                      //reverse: true, // WhatsApp-style: newest at bottom
-                      shrinkWrap: true,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      itemCount: messages.length,
-                      // Disable automatic scroll to bottom on content change
-                      physics: const ClampingScrollPhysics(),
-                      itemBuilder: (context, index) {
-                        // Reverse the index to show newest messages at bottom
-                        //final reversedIndex = messages.length - 1 - index;
-                        final message = messages[index];
-                        final isSelected = _selectedMessageTimestamps.contains(
-                          message.timestamp,
-                        );
-                        if (_isSelectingMessages &&
-                            index == messages.length - 1) {
-                          debugPrint(
-                            '📋 Building last message widget - index: $index, timestamp: ${message.timestamp}, isSelected: $isSelected',
+                        controller: _scrollController,
+                        //reverse: true, // WhatsApp-style: newest at bottom
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        itemCount: messages.length,
+                        // Disable automatic scroll to bottom on content change
+                        physics: const ClampingScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          // Reverse the index to show newest messages at bottom
+                          //final reversedIndex = messages.length - 1 - index;
+                          final message = messages[index];
+                          final isSelected =
+                              _selectedMessageTimestamps.contains(
+                            message.timestamp,
                           );
-                        }
-                        return ChatMessageWidget(
-                          key: ValueKey(
-                            '${message.timestamp}_${message.text.hashCode}',
-                          ),
-                          text: message.text,
-                          isUser: message.isUser,
-                          onCitationTap: _handleCitationTap,
-                          timestamp: message.timestamp,
-                          onDelete:
-                              () => _handleDeleteMessage(message.timestamp),
-                          // PDF Export selection
-                          isSelectionMode: _isSelectingMessages,
-                          isSelected: isSelected,
-                          onSelectionChanged: (selected) {
+                          if (_isSelectingMessages &&
+                              index == messages.length - 1) {
                             debugPrint(
-                              '📋 Selection changed for message ${message.timestamp}: $selected',
+                              '📋 Building last message widget - index: $index, timestamp: ${message.timestamp}, isSelected: $isSelected',
                             );
-                            setState(() {
-                              if (selected) {
-                                _selectedMessageTimestamps.add(
-                                  message.timestamp,
-                                );
-                                debugPrint(
-                                  '📋 Added. Total selected: ${_selectedMessageTimestamps.length}',
-                                );
-                                debugPrint(
-                                  '📋 Selected timestamps: $_selectedMessageTimestamps',
-                                );
-                              } else {
-                                _selectedMessageTimestamps.remove(
-                                  message.timestamp,
-                                );
-                                debugPrint(
-                                  '📋 Removed. Total selected: ${_selectedMessageTimestamps.length}',
-                                );
-                              }
-                            });
-                          },
-                        );
-                      },
-                    ),
+                          }
+                          return ChatMessageWidget(
+                            key: ValueKey(
+                              '${message.timestamp}_${message.text.hashCode}',
+                            ),
+                            text: message.text,
+                            isUser: message.isUser,
+                            onCitationTap: _handleCitationTap,
+                            timestamp: message.timestamp,
+                            onDelete: () =>
+                                _handleDeleteMessage(message.timestamp),
+                            // PDF Export selection
+                            isSelectionMode: _isSelectingMessages,
+                            isSelected: isSelected,
+                            onSelectionChanged: (selected) {
+                              debugPrint(
+                                '📋 Selection changed for message ${message.timestamp}: $selected',
+                              );
+                              setState(() {
+                                if (selected) {
+                                  _selectedMessageTimestamps.add(
+                                    message.timestamp,
+                                  );
+                                  debugPrint(
+                                    '📋 Added. Total selected: ${_selectedMessageTimestamps.length}',
+                                  );
+                                  debugPrint(
+                                    '📋 Selected timestamps: $_selectedMessageTimestamps',
+                                  );
+                                } else {
+                                  _selectedMessageTimestamps.remove(
+                                    message.timestamp,
+                                  );
+                                  debugPrint(
+                                    '📋 Removed. Total selected: ${_selectedMessageTimestamps.length}',
+                                  );
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
           ),
 
           // Loading indicator with dynamic status
@@ -845,38 +831,34 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children:
-                questions.map((question) {
-                  return ActionChip(
-                    label: Text(
-                      question,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    onPressed:
-                        isLoading
-                            ? null
-                            : () {
-                              // Send as user message
-                              ref
-                                  .read(chatProvider.notifier)
-                                  .sendMessage(question);
-                              // Clear questions after use
-                              ref
-                                  .read(followUpQuestionsProvider.notifier)
-                                  .clearQuestions();
-                            },
-                    backgroundColor: theme.cardColor,
-                    side: BorderSide(
-                      color: theme.colorScheme.tertiary.withValues(alpha: 0.3),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                  );
-                }).toList(),
+            children: questions.map((question) {
+              return ActionChip(
+                label: Text(
+                  question,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                onPressed: isLoading
+                    ? null
+                    : () {
+                        // Send as user message
+                        ref.read(chatProvider.notifier).sendMessage(question);
+                        // Clear questions after use
+                        ref
+                            .read(followUpQuestionsProvider.notifier)
+                            .clearQuestions();
+                      },
+                backgroundColor: theme.cardColor,
+                side: BorderSide(
+                  color: theme.colorScheme.tertiary.withValues(alpha: 0.3),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -917,14 +899,13 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
               ),
               const Spacer(),
               TextButton(
-                onPressed:
-                    isLoading
-                        ? null
-                        : () {
-                          ref
-                              .read(selectedPapersProvider.notifier)
-                              .clearSelection();
-                        },
+                onPressed: isLoading
+                    ? null
+                    : () {
+                        ref
+                            .read(selectedPapersProvider.notifier)
+                            .clearSelection();
+                      },
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -952,10 +933,9 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
               _buildRagButton(
                 icon: Icons.compare_arrows,
                 label: 'Compare',
-                onPressed:
-                    isLoading || selectedCount < 2
-                        ? null
-                        : () => _executeRagDirectly('compare'),
+                onPressed: isLoading || selectedCount < 2
+                    ? null
+                    : () => _executeRagDirectly('compare'),
               ),
               _buildRagButton(
                 icon: Icons.insights,
@@ -1072,11 +1052,10 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
           if (selectedPapers.isEmpty) {
             // Generate follow-ups based on chat history
             final chatHistory = ref.read(chatProvider).chatHistory;
-            final recentMessages =
-                chatHistory
-                    .where((msg) => msg.role == 'user' || msg.role == 'model')
-                    .take(10)
-                    .toList();
+            final recentMessages = chatHistory
+                .where((msg) => msg.role == 'user' || msg.role == 'model')
+                .take(10)
+                .toList();
 
             if (recentMessages.isEmpty) {
               throw Exception(
@@ -1085,16 +1064,14 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
             }
 
             // Build context from recent messages
-            final conversationContext = recentMessages
-                .map((msg) {
-                  final role = msg.role == 'user' ? 'User' : 'AI';
-                  final text = msg.parts
-                      .whereType<AiTextPart>()
-                      .map((part) => part.text)
-                      .join(' ');
-                  return '$role: $text';
-                })
-                .join('\n\n');
+            final conversationContext = recentMessages.map((msg) {
+              final role = msg.role == 'user' ? 'User' : 'AI';
+              final text = msg.parts
+                  .whereType<AiTextPart>()
+                  .map((part) => part.text)
+                  .join(' ');
+              return '$role: $text';
+            }).join('\n\n');
 
             // Use RAG service to generate questions from conversation
             questions = await ragService.suggestFollowUpQuestions(

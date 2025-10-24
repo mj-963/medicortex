@@ -8,15 +8,14 @@ class ChatMessageWidget extends StatefulWidget {
   final bool isUser;
   final int timestamp;
   final Function(int)?
-  onCitationTap; // Callback when citation [1], [2], etc. is tapped
+      onCitationTap; // Callback when citation [1], [2], etc. is tapped
   final VoidCallback? onRegenerate; // Callback to regenerate AI response
   final VoidCallback? onEdit; // Callback to edit user message
   final VoidCallback? onDelete; // Callback to delete message
   // PDF Export selection
   final bool isSelectionMode; // Whether in selection mode for PDF export
   final bool isSelected; // Whether this message is selected
-  final Function(bool)?
-  onSelectionChanged; // Callback when selection changes
+  final Function(bool)? onSelectionChanged; // Callback when selection changes
 
   const ChatMessageWidget({
     super.key,
@@ -52,33 +51,33 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
               // Message container
               Container(
                 margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * 0.8,
                 ),
                 decoration: BoxDecoration(
                   color: widget.isUser ? theme.colorScheme.primary : null,
                   borderRadius: BorderRadius.circular(12),
-                  border:
-                      widget.isUser
-                          ? null
-                          : Border.all(
-                            color:
-                                widget.isSelectionMode && widget.isSelected
-                                    ? theme.colorScheme.primary
-                                    : theme.dividerColor,
-                            width: widget.isSelectionMode && widget.isSelected ? 2 : 1,
-                          ),
+                  border: widget.isUser
+                      ? null
+                      : Border.all(
+                          color: widget.isSelectionMode && widget.isSelected
+                              ? theme.colorScheme.primary
+                              : theme.dividerColor,
+                          width: widget.isSelectionMode && widget.isSelected
+                              ? 2
+                              : 1,
+                        ),
                 ),
-                child:
-                    widget.isUser
-                        ? Text(
-                          widget.text,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onPrimary,
-                          ),
-                        )
-                        : _buildAIMessage(context),
+                child: widget.isUser
+                    ? Text(
+                        widget.text,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onPrimary,
+                        ),
+                      )
+                    : _buildAIMessage(context),
               ),
               // Checkbox overlay for selection mode
               if (widget.isSelectionMode)
@@ -169,18 +168,13 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     return MarkdownBody.streamLatex(
       data: processedText,
       shrinkWrap: true,
-      streamingConfig:
-          isRecent
-              ? StreamingConfig(
-                adaptiveBatching: true,
-                batchUpdateInterval: const Duration(milliseconds: 100),
-                typingSpeed: const Duration(milliseconds: 10),
-                fadeInEnabled: true,
-                fadeInDuration: const Duration(milliseconds: 100),
-                fadeInCurve: Curves.easeOut,
-                animationsEnabled: true,
-              )
-              : null,
+      streamingConfig: isRecent
+          ? StreamingConfig(
+              adaptiveBatching: true,
+              batchUpdateInterval: const Duration(milliseconds: 20),
+              typingSpeed: const Duration(milliseconds: 2),
+            )
+          : null,
       selectable: true,
       styleSheet: getMarkDownStyle(context),
       onTapLink: (text, href, title) {
