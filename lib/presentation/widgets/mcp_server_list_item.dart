@@ -41,7 +41,8 @@ class McpServerListItem extends StatelessWidget {
             trailing: Switch(
               value: userWantsActive,
               onChanged: (bool value) => onToggleActive(server.id, value),
-              activeThumbColor: theme.colorScheme.primary,
+              // activeThumbColor removed for Flutter 3.32 compatibility
+              // In Flutter 3.32+, use default Material 3 styling instead
             ),
             title: Text(
               server.name,

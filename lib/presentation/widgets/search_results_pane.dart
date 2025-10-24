@@ -435,7 +435,8 @@ class _SearchResultsPaneState extends ConsumerState<SearchResultsPane> {
                     }
                   });
                 },
-                activeTrackColor: theme.colorScheme.primary,
+                // activeTrackColor removed for Flutter 3.32 compatibility
+                // In Flutter 3.32+, use default Material 3 styling instead
               ),
               const Spacer(),
               Text(
