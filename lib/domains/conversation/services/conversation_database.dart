@@ -16,8 +16,8 @@ class AppDatabase extends _$AppDatabase {
       web: DriftWebOptions(
         // GitHub Pages serves WASM with correct MIME type (application/wasm)
         // Appwrite Sites doesn't support custom headers, so we host WASM externally
-        sqlite3Wasm: Uri.parse('https://mj-963.github.io/medicortex/wasm/sqlite3.wasm'),
-        driftWorker: Uri.parse('https://mj-963.github.io/medicortex/wasm/drift_worker.js'),
+        sqlite3Wasm: Uri.parse('https://flutterfanatic.github.io/medicortex-wasm-files/sqlite3.wasm'),
+        driftWorker: Uri.parse('https://flutterfanatic.github.io/medicortex-wasm-files/drift_worker.js'),
       ),
     );
   }
