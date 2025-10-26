@@ -14,8 +14,10 @@ class AppDatabase extends _$AppDatabase {
     return driftDatabase(
       name: 'medicortex_conversations',
       web: DriftWebOptions(
-        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-        driftWorker: Uri.parse('drift_worker.js'),
+        // GitHub Pages serves WASM with correct MIME type (application/wasm)
+        // Appwrite Sites doesn't support custom headers, so we host WASM externally
+        sqlite3Wasm: Uri.parse('https://mj-963.github.io/medicortex/wasm/sqlite3.wasm'),
+        driftWorker: Uri.parse('https://mj-963.github.io/medicortex/wasm/drift_worker.js'),
       ),
     );
   }
