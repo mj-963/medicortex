@@ -1,0 +1,11 @@
+# WASM files must be served with application/wasm MIME type
+/*.wasm
+  Content-Type: application/wasm
+
+# JavaScript files
+/*.js
+  Content-Type: application/javascript; charset=utf-8
+
+# Worker files
+/drift_worker.js
+  Content-Type: application/javascript; charset=utf-8

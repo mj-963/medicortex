@@ -14,10 +14,10 @@ class AppDatabase extends _$AppDatabase {
     return driftDatabase(
       name: 'medicortex_conversations',
       web: DriftWebOptions(
-        // GitHub Pages serves WASM with correct MIME type (application/wasm)
-        // Appwrite Sites doesn't support custom headers, so we host WASM externally
-        sqlite3Wasm: Uri.parse('https://flutterfanatic.github.io/medicortex-wasm-files/sqlite3.wasm'),
-        driftWorker: Uri.parse('https://flutterfanatic.github.io/medicortex-wasm-files/drift_worker.js'),
+        sqlite3Wasm: Uri.parse(
+            'https://flutterfanatic.github.io/medicortex-wasm-files/sqlite3.wasm'),
+        driftWorker: Uri.parse(
+            'https://flutterfanatic.github.io/medicortex-wasm-files/drift_worker.js'),
       ),
     );
   }
@@ -123,7 +123,8 @@ class AppDatabase extends _$AppDatabase {
       await (delete(chatMessages)
             ..where((tbl) =>
                 tbl.conversationId.equals(conversationId) &
-                tbl.timestamp.equals(DateTime.fromMillisecondsSinceEpoch(timestamp))))
+                tbl.timestamp
+                    .equals(DateTime.fromMillisecondsSinceEpoch(timestamp))))
           .go();
 
       // Update conversation's lastModified and messageCount
@@ -167,14 +168,16 @@ class AppDatabase extends _$AppDatabase {
 
   /// Get conversation count
   Future<int> getConversationCount() async {
-    final countQuery = selectOnly(conversations)..addColumns([conversations.id.count()]);
+    final countQuery = selectOnly(conversations)
+      ..addColumns([conversations.id.count()]);
     final result = await countQuery.getSingle();
     return result.read(conversations.id.count()) ?? 0;
   }
 
   /// Get total message count across all conversations
   Future<int> getTotalMessageCount() async {
-    final countQuery = selectOnly(chatMessages)..addColumns([chatMessages.id.count()]);
+    final countQuery = selectOnly(chatMessages)
+      ..addColumns([chatMessages.id.count()]);
     final result = await countQuery.getSingle();
     return result.read(chatMessages.id.count()) ?? 0;
   }
@@ -245,11 +248,13 @@ class ConversationDatabase {
     return await instance.getMessages(conversationId);
   }
 
-  static Future<List<Conversation>> getAllConversations({int limit = 50}) async {
+  static Future<List<Conversation>> getAllConversations(
+      {int limit = 50}) async {
     return await instance.getAllConversations(limit: limit);
   }
 
-  static Future<List<Conversation>> searchConversations(String searchTerm) async {
+  static Future<List<Conversation>> searchConversations(
+      String searchTerm) async {
     return await instance.searchConversations(searchTerm);
   }
 
