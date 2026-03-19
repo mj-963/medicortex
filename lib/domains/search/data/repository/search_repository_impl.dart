@@ -3,12 +3,12 @@ import 'package:flutter/foundation.dart';
 import '../../domain/entities/search_query.dart';
 import '../../domain/entities/search_result.dart';
 import '../../domain/repository/search_repository.dart';
-import '../client/elasticsearch_client.dart';
+import '../client/qdrant_client.dart';
 import '../../../ai/infrastructure/vertex_ai_embeddings_service.dart';
 
-/// Implementation of SearchRepository using Elasticsearch
+/// Implementation of SearchRepository using Qdrant
 class SearchRepositoryImpl implements SearchRepository {
-  final ElasticsearchClient _client;
+  final QdrantClient _client;
   final VertexAiEmbeddingsService? _embeddingsService;
 
   SearchRepositoryImpl(this._client, [this._embeddingsService]);
@@ -66,9 +66,9 @@ class SearchRepositoryImpl implements SearchRepository {
       debugPrint('🔨 Creating Elasticsearch index...');
       await _client.createIndex();
     } else {
-      debugPrint('✅ Elasticsearch index already exists');
+      debugPrint('✅ Qdrant collection already exists');
       final stats = await _client.getIndexStats();
-      debugPrint('📊 Index has ${stats['document_count']} documents');
+      debugPrint('📊 Collection has ${stats['document_count']} documents');
     }
   }
 

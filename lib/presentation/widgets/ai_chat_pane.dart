@@ -201,10 +201,10 @@ class _AiChatPaneState extends ConsumerState<AiChatPane> {
     );
 
     try {
-      // Get Elasticsearch client directly for ID-based lookup
-      final esClient = ref.read(elasticsearchClientProvider);
+      // Get Qdrant client directly for ID-based lookup
+      final esClient = ref.read(qdrantClientProvider);
 
-      // Fetch document by ID (PMID is used as document ID in Elasticsearch)
+      // Fetch document by ID (PMID is used as point ID in Qdrant)
       final response = await esClient.getDocumentById(pmid);
 
       if (response != null) {

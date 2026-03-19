@@ -1,19 +1,19 @@
 import '../repository/ai_repository.dart';
 import '../entity/ai_entities.dart';
-import '../../search/data/client/elasticsearch_client.dart';
+import '../../search/data/client/qdrant_client.dart';
 import '../../search/domain/entities/search_result.dart';
 import '../infrastructure/vertex_ai_embeddings_service.dart';
 
 /// RAG (Retrieval-Augmented Generation) Service
-/// Combines Elastic hybrid search with Gemini AI for grounded responses
+/// Combines Qdrant vector search with Gemini AI for grounded responses
 class RagService {
   final AiRepository aiRepository;
-  final ElasticsearchClient elasticClient;
+  final QdrantClient qdrantClient;
   final VertexAiEmbeddingsService embeddingsService;
 
   RagService({
     required this.aiRepository,
-    required this.elasticClient,
+    required this.qdrantClient,
     required this.embeddingsService,
   });
 
@@ -35,7 +35,7 @@ class RagService {
       );
 
       // Step 2: Hybrid search (vector + keyword)
-      final searchResults = await elasticClient.hybridSearch(
+      final searchResults = await qdrantClient.hybridSearch(
         query: question,
         queryEmbedding: queryEmbedding,
         size: maxResults,

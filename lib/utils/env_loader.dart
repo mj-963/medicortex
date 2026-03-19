@@ -45,6 +45,10 @@ class EnvLoader {
         jsonString =
             const String.fromEnvironment('elasticsearch', defaultValue: '');
         break;
+      case 'qdrant':
+        jsonString =
+            const String.fromEnvironment('qdrant', defaultValue: '');
+        break;
       case 'vertex_ai':
         jsonString =
             const String.fromEnvironment('vertex_ai', defaultValue: '');
@@ -110,8 +114,11 @@ class EnvLoader {
 
   // Convenience getters for your app's specific config
 
-  /// Elasticsearch configuration
+  /// Elasticsearch configuration (legacy)
   static Map<String, dynamic> get elasticsearch => getJson('elasticsearch');
+
+  /// Qdrant configuration
+  static Map<String, dynamic> get qdrant => getJson('qdrant');
 
   /// Vertex AI configuration
   static Map<String, dynamic> get vertexAi => getJson('vertex_ai');

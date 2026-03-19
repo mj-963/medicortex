@@ -7,18 +7,18 @@ import 'vertex_ai_provider.dart';
 /// Provider for RAG Service
 final ragServiceProvider = Provider<RagService?>((ref) {
   final aiRepository = ref.watch(aiRepositoryProvider);
-  
+
   // RAG service requires AI repository
   if (aiRepository == null) {
     return null;
   }
-  
-  final elasticClient = ref.watch(elasticsearchClientProvider);
+
+  final qdrantClient = ref.watch(qdrantClientProvider);
   final embeddingsService = ref.watch(vertexAiProvider);
-  
+
   return RagService(
     aiRepository: aiRepository,
-    elasticClient: elasticClient,
+    qdrantClient: qdrantClient,
     embeddingsService: embeddingsService,
   );
 });

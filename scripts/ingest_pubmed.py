@@ -1,244 +1,372 @@
 #!/usr/bin/env python3
 """
-PubMed Data Ingestion Script for MediCortex
+PubMed Data Ingestion Script for MediCortex (Qdrant edition)
 
-Fetches medical articles from PubMed API and indexes them into Elasticsearch.
-Free to use - no API key required (3 requests/second limit).
+Fetches medical articles from PubMed API and indexes them into Qdrant Cloud.
+Optionally generates semantic embeddings via Vertex AI (text-embedding-004).
+
+Requirements:
+    pip install requests google-auth
+
+Usage:
+    python ingest_pubmed.py               # full run with embeddings
+    python ingest_pubmed.py --no-embed    # skip embeddings (keyword search only)
 """
 
 import requests
 import time
 import json
+import sys
+import os
+import math
+import argparse
 from datetime import datetime
 from typing import List, Dict, Optional
 import xml.etree.ElementTree as ET
-import sys
-import os
 from pathlib import Path
 
-# ========== LOAD CONFIGURATION FROM env.json ==========
+# ========== CONFIG ==========
 
 def load_config():
-    """Load configuration from env.json file"""
-    # Look for env.json in parent directory (project root)
     script_dir = Path(__file__).parent
     env_path = script_dir.parent / 'env.json'
-    
     if not env_path.exists():
-        print("❌ Error: env.json not found!")
-        print(f"   Expected location: {env_path}")
-        print(f"   Please copy env.example.json to env.json and configure your credentials.")
+        print(f"❌ env.json not found at {env_path}")
+        print("   Copy env.example.json to env.json and fill in your credentials.")
         sys.exit(1)
-    
     try:
         with open(env_path, 'r') as f:
-            config = json.load(f)
-        return config
+            raw = json.load(f)
+        # env.json stores JSON objects as escaped strings
+        parsed = {}
+        for k, v in raw.items():
+            if isinstance(v, str):
+                try:
+                    parsed[k] = json.loads(v)
+                except (json.JSONDecodeError, ValueError):
+                    parsed[k] = v
+            else:
+                parsed[k] = v
+        return parsed
     except Exception as e:
         print(f"❌ Error loading env.json: {e}")
         sys.exit(1)
 
-# Load configuration
 CONFIG = load_config()
 
-# Elasticsearch configuration
-ELASTICSEARCH_URL = CONFIG['elasticsearch']['endpoint']
-ES_API_KEY = CONFIG['elasticsearch']['apiKey']
-ES_INDEX = CONFIG['elasticsearch']['index']
+QDRANT_URL        = CONFIG['qdrant']['endpoint'].rstrip('/')
+QDRANT_API_KEY    = CONFIG['qdrant']['apiKey']
+QDRANT_COLLECTION = CONFIG['qdrant'].get('collection', 'pubmed_articles')
 
-# PubMed configuration
-PUBMED_API_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-EMAIL = CONFIG['pubmed']['email']
-API_KEY = CONFIG['pubmed'].get('apiKey')  # Optional
+PUBMED_API_BASE   = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+PUBMED_EMAIL      = CONFIG.get('pubmed', {}).get('email', 'user@example.com')
+PUBMED_API_KEY    = CONFIG.get('pubmed', {}).get('apiKey')
 
-# Rate limiting (requests per second)
-REQUESTS_PER_SECOND = 3 if not API_KEY else 10
+REQUESTS_PER_SECOND = 3 if not PUBMED_API_KEY else 10
 DELAY = 1.0 / REQUESTS_PER_SECOND
 
-# Medical topics to fetch articles for
+# ========== MEDICAL TOPICS ==========
+
 MEDICAL_TOPICS = [
-    # Chronic diseases (high priority)
     ("diabetes mellitus type 2[Title/Abstract] AND (treatment OR management)", 800),
     ("hypertension[Title/Abstract] AND (treatment OR management)", 600),
     ("cardiovascular disease[Title/Abstract] AND prevention", 500),
     ("cancer immunotherapy[Title/Abstract]", 400),
-
-    # Mental health (important for demo)
     ("anxiety disorder[Title/Abstract] AND (treatment OR therapy)", 500),
     ("depression[Title/Abstract] AND (cognitive behavioral therapy OR medication)", 500),
     ("post traumatic stress disorder[Title/Abstract] AND treatment", 300),
-
-    # Common conditions
     ("migraine headache[Title/Abstract] AND treatment", 400),
     ("asthma[Title/Abstract] AND management", 300),
     ("arthritis rheumatoid[Title/Abstract] AND treatment", 300),
-
-    # Infectious diseases
     ("covid-19[Title/Abstract] AND (treatment OR vaccine)", 400),
     ("influenza[Title/Abstract] AND vaccination", 300),
-
-    # Nutrition and lifestyle
     ("intermittent fasting[Title/Abstract] AND (weight loss OR diabetes)", 300),
     ("mediterranean diet[Title/Abstract] AND health", 300),
     ("exercise[Title/Abstract] AND cardiovascular health", 300),
-
-    # Preventive care
     ("screening[Title/Abstract] AND (cancer OR cardiovascular)", 400),
     ("vaccination[Title/Abstract] AND efficacy", 300),
 ]
 
-# ========== ELASTICSEARCH CLIENT ==========
+# ========== VERTEX AI EMBEDDINGS ==========
 
-class ElasticsearchClient:
+class VertexAiEmbeddingsClient:
+    """Generates text embeddings using Google Vertex AI text-embedding-004."""
+
     def __init__(self):
-        self.url = ELASTICSEARCH_URL
+        sa_info = CONFIG.get('service_account')
+        if not sa_info or not isinstance(sa_info, dict):
+            raise RuntimeError("service_account not found in env.json")
+
+        vertex_cfg = CONFIG.get('vertex_ai', {})
+        self.project_id = vertex_cfg.get('project_id') or sa_info.get('project_id')
+        self.location   = vertex_cfg.get('location', 'us-central1')
+        self.model      = 'text-embedding-004'
+        self._credentials = None
+
+        try:
+            from google.oauth2 import service_account as sa_module
+            from google.auth.transport.requests import Request as GRequest
+
+            self._credentials = sa_module.Credentials.from_service_account_info(
+                sa_info,
+                scopes=['https://www.googleapis.com/auth/cloud-platform'],
+            )
+            self._auth_request = GRequest()
+        except ImportError:
+            raise RuntimeError(
+                "google-auth not installed. Run: pip install google-auth"
+            )
+
+    def _refresh_token(self):
+        if not self._credentials.valid:
+            self._credentials.refresh(self._auth_request)
+
+    def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for a batch of texts (max ~20 at a time)."""
+        self._refresh_token()
+        token = self._credentials.token
+
+        url = (
+            f"https://{self.location}-aiplatform.googleapis.com/v1"
+            f"/projects/{self.project_id}/locations/{self.location}"
+            f"/publishers/google/models/{self.model}:predict"
+        )
+        instances = [
+            {'content': text[:2000], 'task_type': 'RETRIEVAL_DOCUMENT'}
+            for text in texts
+        ]
+
+        resp = requests.post(
+            url,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json',
+            },
+            json={'instances': instances},
+            timeout=60,
+        )
+
+        if resp.status_code == 200:
+            predictions = resp.json().get('predictions', [])
+            return [p['embeddings']['values'] for p in predictions]
+        else:
+            raise RuntimeError(
+                f"Vertex AI embedding failed ({resp.status_code}): {resp.text[:300]}"
+            )
+
+
+# ========== QDRANT CLIENT ==========
+
+class QdrantClient:
+    def __init__(self):
         self.headers = {
-            'Authorization': f'ApiKey {ES_API_KEY}',
-            'Content-Type': 'application/json'
+            'api-key': QDRANT_API_KEY,
+            'Content-Type': 'application/json',
         }
         self.indexed_count = 0
-        self.error_count = 0
+        self.error_count   = 0
+
+    def ensure_collection(self):
+        """Create collection + text index if it doesn't exist."""
+        resp = requests.get(
+            f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}",
+            headers=self.headers,
+        )
+        if resp.status_code == 200:
+            info = resp.json().get('result', {})
+            print(f"ℹ️  Collection '{QDRANT_COLLECTION}' exists "
+                  f"({info.get('points_count', 0)} points)")
+            return
+
+        print(f"🔨 Creating collection '{QDRANT_COLLECTION}'...")
+        resp = requests.put(
+            f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}",
+            headers=self.headers,
+            json={'vectors': {'size': 768, 'distance': 'Cosine'}},
+        )
+        if resp.status_code not in [200, 409]:
+            raise RuntimeError(f"Collection creation failed: {resp.text}")
+        print(f"✅ Collection created")
+
+        # Text index on 'content' for keyword fallback
+        resp = requests.put(
+            f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/index",
+            headers=self.headers,
+            json={
+                'field_name': 'content',
+                'field_schema': {
+                    'type': 'text',
+                    'tokenizer': 'word',
+                    'min_token_len': 2,
+                    'max_token_len': 30,
+                    'lowercase': True,
+                },
+            },
+        )
+        if resp.status_code in [200, 202]:
+            print("✅ Text index created on 'content' field")
+
+    def filter_new(self, pmids: List[str]) -> List[str]:
+        """Return only PMIDs that are NOT already in Qdrant."""
+        if not pmids:
+            return []
+        existing = set()
+        for i in range(0, len(pmids), 100):
+            batch_ids = [int(p) for p in pmids[i:i + 100] if p.isdigit()]
+            if not batch_ids:
+                continue
+            try:
+                resp = requests.post(
+                    f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points",
+                    headers=self.headers,
+                    json={'ids': batch_ids, 'with_payload': False, 'with_vector': False},
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    for pt in resp.json().get('result', []):
+                        existing.add(str(pt['id']))
+            except Exception as e:
+                print(f"⚠️  Existence check failed: {e}")
+        return [p for p in pmids if p not in existing]
 
     def index_documents(self, documents: List[Dict]) -> Dict:
-        """Bulk index documents"""
+        """Upsert documents as Qdrant points (batch of 100)."""
         if not documents:
             return {'indexed': 0, 'errors': 0}
 
-        # Build NDJSON for bulk API
-        ndjson_lines = []
+        points = []
         for doc in documents:
             pmid = doc.get('pmid')
             if not pmid:
                 continue
+            try:
+                point_id = int(pmid)
+            except (ValueError, TypeError):
+                self.error_count += 1
+                continue
 
-            # Index action
-            ndjson_lines.append(json.dumps({'index': {'_index': ES_INDEX, '_id': pmid}}))
-            # Document
-            ndjson_lines.append(json.dumps(doc))
+            # Pop embedding so it's not duplicated in payload
+            vector = doc.pop('embedding', None) or [0.0] * 768
 
-        ndjson = '\n'.join(ndjson_lines) + '\n'
+            points.append({
+                'id': point_id,
+                'vector': vector,
+                'payload': doc,
+            })
 
-        # Send bulk request
-        response = requests.post(
-            f"{self.url}/_bulk",
-            headers={**self.headers, 'Content-Type': 'application/x-ndjson'},
-            data=ndjson
-        )
-
-        if response.status_code == 200:
-            result = response.json()
-            has_errors = result.get('errors', False)
-
-            if has_errors:
-                items = result.get('items', [])
-                indexed = sum(1 for item in items if 'error' not in item.get('index', {}))
-                errors = len(items) - indexed
-                self.indexed_count += indexed
-                self.error_count += errors
-                return {'indexed': indexed, 'errors': errors}
-            else:
-                self.indexed_count += len(documents)
-                return {'indexed': len(documents), 'errors': 0}
-        else:
-            self.error_count += len(documents)
-            print(f"❌ Bulk index failed: {response.status_code}")
-            print(f"   Response: {response.text[:200]}")
+        if not points:
             return {'indexed': 0, 'errors': len(documents)}
 
+        total_indexed = 0
+        total_errors  = 0
+
+        for i in range(0, len(points), 50):
+            batch = points[i:i + 50]
+            success = False
+            for attempt in range(3):
+                try:
+                    resp = requests.put(
+                        f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points",
+                        headers=self.headers,
+                        json={'points': batch},
+                        timeout=120,
+                    )
+                    if resp.status_code == 200 and resp.json().get('status') == 'ok':
+                        total_indexed      += len(batch)
+                        self.indexed_count += len(batch)
+                        success = True
+                    else:
+                        print(f"❌ Upsert failed ({resp.status_code}): {resp.text[:200]}")
+                    break
+                except requests.exceptions.Timeout:
+                    wait = 10 * (attempt + 1)
+                    print(f"⏳ Timeout on batch {i//50 + 1}, retry {attempt + 1}/3 in {wait}s...")
+                    time.sleep(wait)
+                except requests.exceptions.ConnectionError as e:
+                    wait = 10 * (attempt + 1)
+                    print(f"⚠️  Connection error: {e}, retry {attempt + 1}/3 in {wait}s...")
+                    time.sleep(wait)
+
+            if not success and attempt == 2:
+                total_errors      += len(batch)
+                self.error_count  += len(batch)
+                print(f"❌ Batch permanently failed after 3 retries, skipping.")
+
+        return {'indexed': total_indexed, 'errors': total_errors}
+
     def get_stats(self) -> Dict:
-        """Get index statistics"""
         try:
-            response = requests.get(
-                f"{self.url}/{ES_INDEX}/_stats",
-                headers=self.headers
+            resp = requests.get(
+                f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}",
+                headers=self.headers,
             )
-            if response.status_code == 200:
-                data = response.json()
-                indices = data.get('indices', {})
-                index_data = indices.get(ES_INDEX, {})
-                total = index_data.get('total', {})
-                docs = total.get('docs', {})
-                return {
-                    'count': docs.get('count', 0),
-                    'deleted': docs.get('deleted', 0)
-                }
+            if resp.status_code == 200:
+                result = resp.json().get('result', {})
+                return {'count': result.get('points_count', 0)}
         except Exception as e:
             print(f"⚠️  Failed to get stats: {e}")
-        return {'count': 0, 'deleted': 0}
+        return {'count': 0}
+
 
 # ========== PUBMED CLIENT ==========
 
 class PubMedClient:
     def __init__(self):
         self.session = requests.Session()
-        self.total_articles_fetched = 0
+        self.total_fetched = 0
 
     def search(self, query: str, max_results: int = 1000) -> List[str]:
-        """Search PubMed and return PMIDs"""
         params = {
-            'db': 'pubmed',
-            'term': query,
-            'retmax': max_results,
+            'db':      'pubmed',
+            'term':    query,
+            'retmax':  max_results,
             'retmode': 'json',
-            'email': EMAIL,
+            'email':   PUBMED_EMAIL,
         }
-        if API_KEY:
-            params['api_key'] = API_KEY
+        if PUBMED_API_KEY:
+            params['api_key'] = PUBMED_API_KEY
 
         try:
-            response = self.session.get(f"{PUBMED_API_BASE}/esearch.fcgi", params=params)
+            resp = self.session.get(
+                f"{PUBMED_API_BASE}/esearch.fcgi", params=params
+            )
             time.sleep(DELAY)
-
-            if response.status_code == 200:
-                data = response.json()
-                pmids = data.get('esearchresult', {}).get('idlist', [])
-                return pmids
-            else:
-                print(f"❌ Search failed: {response.status_code}")
-                return []
+            if resp.status_code == 200:
+                return resp.json().get('esearchresult', {}).get('idlist', [])
+            print(f"❌ Search failed: {resp.status_code}")
         except Exception as e:
             print(f"❌ Search error: {e}")
-            return []
+        return []
 
     def fetch_details(self, pmids: List[str]) -> List[Dict]:
-        """Fetch article details for PMIDs"""
-        if not pmids:
-            return []
-
         articles = []
-        batch_size = 200  # PubMed allows up to 200 IDs per request
-
-        for i in range(0, len(pmids), batch_size):
-            batch = pmids[i:i+batch_size]
+        for i in range(0, len(pmids), 200):
+            batch = pmids[i:i + 200]
             params = {
-                'db': 'pubmed',
-                'id': ','.join(batch),
+                'db':      'pubmed',
+                'id':      ','.join(batch),
                 'retmode': 'xml',
-                'email': EMAIL,
+                'email':   PUBMED_EMAIL,
             }
-            if API_KEY:
-                params['api_key'] = API_KEY
-
+            if PUBMED_API_KEY:
+                params['api_key'] = PUBMED_API_KEY
             try:
-                response = self.session.get(f"{PUBMED_API_BASE}/efetch.fcgi", params=params)
+                resp = self.session.get(
+                    f"{PUBMED_API_BASE}/efetch.fcgi", params=params
+                )
                 time.sleep(DELAY)
-
-                if response.status_code == 200:
-                    batch_articles = self._parse_xml(response.text)
-                    articles.extend(batch_articles)
-                    self.total_articles_fetched += len(batch_articles)
+                if resp.status_code == 200:
+                    parsed = self._parse_xml(resp.text)
+                    articles.extend(parsed)
+                    self.total_fetched += len(parsed)
                 else:
-                    print(f"❌ Fetch failed: {response.status_code}")
+                    print(f"❌ Fetch failed: {resp.status_code}")
             except Exception as e:
                 print(f"❌ Fetch error: {e}")
-                continue
-
         return articles
 
     def _parse_xml(self, xml_text: str) -> List[Dict]:
-        """Parse PubMed XML into structured data"""
         articles = []
-
         try:
             root = ET.fromstring(xml_text)
         except ET.ParseError as e:
@@ -247,188 +375,189 @@ class PubMedClient:
 
         for article in root.findall('.//PubmedArticle'):
             try:
-                # Extract PMID
                 pmid_elem = article.find('.//PMID')
                 if pmid_elem is None:
                     continue
                 pmid = pmid_elem.text
 
-                # Extract title
                 title_elem = article.find('.//ArticleTitle')
                 title = ''.join(title_elem.itertext()) if title_elem is not None else ''
 
-                # Extract abstract
                 abstract_parts = article.findall('.//AbstractText')
-                abstract = ' '.join([''.join(part.itertext()) for part in abstract_parts])
-
-                # Skip if no abstract (we want high-quality articles)
+                abstract = ' '.join(
+                    ''.join(p.itertext()) for p in abstract_parts
+                )
                 if not abstract:
-                    continue
+                    continue  # skip articles without abstracts
 
-                # Extract publication date
-                pub_date = article.find('.//PubDate')
-                date_str = self._extract_date(pub_date)
-
-                # Extract authors
-                authors = []
+                pub_date  = article.find('.//PubDate')
+                date_str  = self._extract_date(pub_date)
+                authors   = []
                 for author in article.findall('.//Author'):
-                    last = author.find('.//LastName')
+                    last  = author.find('.//LastName')
                     first = author.find('.//ForeName')
                     if last is not None:
-                        name = last.text
-                        if first is not None:
+                        name = last.text or ''
+                        if first is not None and first.text:
                             name = f"{first.text} {name}"
                         authors.append(name)
 
-                # Extract article type
-                pub_types = article.findall('.//PublicationType')
-                article_types = [pt.text for pt in pub_types if pt.text]
+                pub_types    = article.findall('.//PublicationType')
+                article_type = [pt.text for pt in pub_types if pt.text]
 
-                # Build document
-                doc = {
-                    'pmid': pmid,
-                    'title': title,
-                    'abstract': abstract,
-                    'content': f"{title} {abstract}",  # Combined for search
+                articles.append({
+                    'pmid':             pmid,
+                    'title':            title,
+                    'abstract':         abstract,
+                    'content':          f"{title} {abstract}",
                     'publication_date': date_str,
-                    'authors': authors[:10],  # Limit to 10 authors
-                    'article_type': article_types[0] if article_types else 'Article',
-                    'source_url': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
-                    'indexed_at': datetime.now().isoformat(),
-                }
-
-                articles.append(doc)
-
+                    'authors':          authors[:10],
+                    'article_type':     article_type[0] if article_type else 'Article',
+                    'source_url':       f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                    'indexed_at':       datetime.now().isoformat(),
+                })
             except Exception as e:
                 print(f"⚠️  Error parsing article: {e}")
-                continue
-
         return articles
 
     def _extract_date(self, pub_date) -> Optional[str]:
-        """Extract publication date from PubMed XML"""
         if pub_date is None:
             return None
-
-        year = pub_date.find('Year')
+        year  = pub_date.find('Year')
         month = pub_date.find('Month')
-        day = pub_date.find('Day')
-
+        day   = pub_date.find('Day')
         if year is not None:
             y = year.text
             m = month.text if month is not None else '01'
-            d = day.text if day is not None else '01'
-
-            # Convert month name to number
+            d = day.text   if day   is not None else '01'
             months = {
                 'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
                 'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-                'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+                'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12',
             }
             m = months.get(m, m)
-
             try:
-                # Ensure proper formatting
                 m = m.zfill(2) if m.isdigit() else '01'
                 d = d.zfill(2) if d.isdigit() else '01'
                 return f"{y}-{m}-{d}"
-            except:
+            except Exception:
                 return f"{y}-01-01"
-
         return None
 
-# ========== MAIN INGESTION LOGIC ==========
 
-def print_header():
-    """Print welcome message"""
-    print("=" * 70)
-    print("  MediCortex - PubMed Data Ingestion")
-    print("  Fetching medical literature for AI-powered search")
-    print("=" * 70)
-    print()
+# ========== MAIN ==========
 
-def print_progress(current: int, total: int, topic: str, articles: int):
-    """Print progress update"""
-    progress = (current / total) * 100
-    print(f"[{progress:5.1f}%] Topic {current}/{total}: {topic[:40]}")
-    print(f"         Found {articles} articles with abstracts")
+def add_embeddings(articles: List[Dict], embedder: VertexAiEmbeddingsClient):
+    """Generate Vertex AI embeddings and attach to each article in-place."""
+    texts = [a['content'][:2000] for a in articles]
+    batch_size = 20  # safe batch size for Vertex AI
+
+    for i in range(0, len(texts), batch_size):
+        batch_texts    = texts[i:i + batch_size]
+        batch_articles = articles[i:i + batch_size]
+        try:
+            embeddings = embedder.generate_embeddings(batch_texts)
+            for article, emb in zip(batch_articles, embeddings):
+                article['embedding'] = emb
+        except Exception as e:
+            print(f"⚠️  Embedding batch {i//batch_size + 1} failed: {e}")
+            # articles without embedding will use zero vector in index_documents
+        time.sleep(0.5)  # be gentle with the API
+
 
 def main():
-    print_header()
+    parser = argparse.ArgumentParser(description='Ingest PubMed articles into Qdrant')
+    parser.add_argument(
+        '--no-embed',
+        action='store_true',
+        help='Skip Vertex AI embeddings (keyword search only, much faster)',
+    )
+    args = parser.parse_args()
 
-    # Initialize clients
-    es_client = ElasticsearchClient()
+    print("=" * 70)
+    print("  MediCortex — PubMed → Qdrant Ingestion")
+    print("=" * 70)
+    print()
+
+    # Init embeddings
+    embedder = None
+    if not args.no_embed:
+        try:
+            embedder = VertexAiEmbeddingsClient()
+            print("✅ Vertex AI embeddings enabled (semantic search)")
+        except Exception as e:
+            print(f"⚠️  Vertex AI unavailable: {e}")
+            print("   Proceeding with zero vectors — keyword search only.")
+    else:
+        print("ℹ️  Embeddings skipped (--no-embed). Using keyword search only.")
+    print()
+
+    qdrant_client = QdrantClient()
     pubmed_client = PubMedClient()
 
-    # Check initial state
-    print("📊 Checking current index status...")
-    stats = es_client.get_stats()
-    print(f"   Current document count: {stats['count']}")
+    qdrant_client.ensure_collection()
+    stats = qdrant_client.get_stats()
+    print(f"📊 Current document count: {stats['count']:,}")
     print()
 
-    # Confirm start
-    print(f"📚 Will fetch articles for {len(MEDICAL_TOPICS)} medical topics")
-    total_target = sum(count for _, count in MEDICAL_TOPICS)
-    print(f"   Target: ~{total_target:,} articles")
-    print(f"   Rate limit: {REQUESTS_PER_SECOND} requests/second")
+    total_target = sum(n for _, n in MEDICAL_TOPICS)
+    print(f"📚 {len(MEDICAL_TOPICS)} topics  |  ~{total_target:,} target articles")
+    print(f"   Rate limit: {REQUESTS_PER_SECOND} req/s")
     print()
 
-    response = input("Start ingestion? [Y/n]: ")
-    if response.lower() == 'n':
+    answer = input("Start ingestion? [Y/n]: ").strip().lower()
+    if answer == 'n':
         print("Cancelled.")
         return
 
-    print("\n🚀 Starting ingestion...\n")
+    print("\n🚀 Starting...\n")
     start_time = time.time()
 
-    # Process each topic
     for idx, (query, max_results) in enumerate(MEDICAL_TOPICS, 1):
-        print_progress(idx, len(MEDICAL_TOPICS), query, 0)
+        pct = idx / len(MEDICAL_TOPICS) * 100
+        print(f"[{pct:5.1f}%] Topic {idx}/{len(MEDICAL_TOPICS)}: {query[:50]}")
 
-        # Search PubMed
         pmids = pubmed_client.search(query, max_results)
-
         if not pmids:
-            print("   ⚠️  No results found")
+            print("         ⚠️  No results")
             continue
 
-        # Fetch article details
+        pmids = qdrant_client.filter_new(pmids)
+        if not pmids:
+            print("         ✅ All already indexed, skipping")
+            continue
+
         articles = pubmed_client.fetch_details(pmids)
-        print(f"         Fetched {len(articles)} complete articles")
+        print(f"         Fetched {len(articles)} new articles")
 
         if articles:
-            # Index into Elasticsearch
-            result = es_client.index_documents(articles)
+            if embedder:
+                add_embeddings(articles, embedder)
+
+            result = qdrant_client.index_documents(articles)
             print(f"         Indexed: {result['indexed']}, Errors: {result['errors']}")
 
         print()
 
-    # Final statistics
     elapsed = time.time() - start_time
-    print("\n" + "=" * 70)
-    print("  ✅ Ingestion Complete!")
+    final   = qdrant_client.get_stats()
     print("=" * 70)
-    print(f"  Total articles indexed: {es_client.indexed_count:,}")
-    print(f"  Errors: {es_client.error_count}")
-    print(f"  Time elapsed: {elapsed/60:.1f} minutes")
+    print("  ✅ Done!")
+    print(f"  Indexed this run : {qdrant_client.indexed_count:,}")
+    print(f"  Errors           : {qdrant_client.error_count}")
+    print(f"  Total in Qdrant  : {final['count']:,}")
+    print(f"  Time             : {elapsed / 60:.1f} min")
+    print("=" * 70)
 
-    # Get final stats
-    final_stats = es_client.get_stats()
-    print(f"  Final index count: {final_stats['count']:,} documents")
-    print("=" * 70)
-    print()
-    print("🎉 Your MediCortex index is ready for search!")
-    print()
 
 if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n⚠️  Interrupted by user")
-        print("Progress has been saved. You can run the script again to continue.")
+        print("\n⚠️  Interrupted. Progress has been saved.")
         sys.exit(0)
     except Exception as e:
-        print(f"\n\n❌ Fatal error: {e}")
+        print(f"\n❌ Fatal error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
