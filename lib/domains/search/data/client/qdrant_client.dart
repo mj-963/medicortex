@@ -289,8 +289,10 @@ class QdrantClient {
           path: proxyPath,
           data: body,
         );
+        // SecureAPI wraps responses as {status, message, data: <qdrant response>}
+        final qdrantResponse = result['data'] ?? result;
         return http.Response(
-          jsonEncode(result),
+          jsonEncode(qdrantResponse),
           200,
           headers: {'content-type': 'application/json; charset=utf-8'},
         );

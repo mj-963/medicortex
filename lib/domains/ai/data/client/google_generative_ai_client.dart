@@ -16,7 +16,7 @@ class GoogleGenerativeAiClient implements AiClient {
 
   GoogleGenerativeAiClient(
     this._apiKey, {
-    String modelName = 'models/gemini-flash-latest',
+    String modelName = 'gemini-2.0-flash',
   }) : _modelName = modelName {
     initialize();
   }

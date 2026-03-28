@@ -116,10 +116,16 @@ class _ResearchWorkspaceScreenState
           // Clear old chat messages first
           ref.read(chatProvider.notifier).clearChat();
 
-          sessionId = await ref
-              .read(conversationIsarProvider.notifier)
-              .createSession(query, results.results);
-          debugPrint('   Session ID: $sessionId');
+          // Persist session — failure is non-fatal, AI still runs
+          try {
+            sessionId = await ref
+                .read(conversationIsarProvider.notifier)
+                .createSession(query, results.results);
+            debugPrint('   Session ID: $sessionId');
+          } catch (e) {
+            debugPrint('⚠️ Could not persist session (DB unavailable): $e');
+            sessionId = DateTime.now().millisecondsSinceEpoch;
+          }
 
           // Set as active session
           ref.read(currentSessionIdProvider.notifier).state = sessionId;
